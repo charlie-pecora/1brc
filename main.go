@@ -203,13 +203,6 @@ func ProcessChunk(start, end int64, c chan map[string]Stats) {
 
 func ProcessLine(b []byte) (string, int64, error) {
 	// fmt.Println(string(b));
-	defer func() {
-		// recover from panic if one occurred. Set err to nil otherwise.
-		if recover() != nil {
-			fmt.Println(string(b))
-			panic("t")
-		}
-	}()
 	values := strings.Split(string(b), ";")
 	if len(values) != 2 {
 		return "", 0, fmt.Errorf("Empty row %v", values)
