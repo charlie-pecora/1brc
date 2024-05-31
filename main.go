@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 )
 
 const inputFile = "./measurements.txt"
-const numWorkers = 4
+const numWorkers = 1
 
 func main() {
 	f, err := os.Open(inputFile)
@@ -23,10 +25,13 @@ func main() {
 	for worker := 0; worker < numWorkers; worker++ {
 		go ProcessChunk(segments[worker], segments[worker+1], c)
 	}
+	finalResult := make(map[string]Stats);
 	for worker := 0; worker < numWorkers; worker++ {
 		result := <-c
 		fmt.Println(result)
+		CombineMaps(&finalResult, result);
 	}
+	fmt.Println(finalResult);
 }
 
 func getFileSegments(f *os.File) []int64 {
@@ -41,7 +46,7 @@ func getFileSegments(f *os.File) []int64 {
 
 	segments := []int64{0}
 
-	buf := make([]byte, 500)
+	buf := make([]byte, 5000)
 	for i := 0; i < numWorkers; i++ {
 		nextStop := segments[i] + chunkSize
 		if i == numWorkers-1 {
@@ -79,33 +84,79 @@ type Stats struct {
 	count int64
 }
 
+func (s *Stats) AddLine(new int64) {
+	s.count += 1;
+	s.sum += new;
+	s.max = max(s.max, new);
+	s.min = min(s.min, new);
+}
+
+func (s *Stats) Combine(other Stats) {
+	s.count += other.count;
+	s.sum += other.sum;
+	s.max = max(s.max, other.max);
+	s.min = min(s.min, other.min);
+}
+
+func makeStats(new int64) Stats {
+	return Stats{
+		max:   new,
+		min:   new,
+		sum:   new,
+		count: new,
+	}
+
+}
+
+func AddToMap(sm *map[string]Stats, location string, temp int64) {
+	locationStat, ok := (*sm)[location];
+	if !ok {
+		locationStat = makeStats(temp);
+	} else {
+		locationStat.AddLine(temp);
+	}
+	(*sm)[location] = locationStat;
+}
+
+func CombineMaps(sm *map[string]Stats, other map[string]Stats) {
+	for location, otherStat := range other {
+		locationStat, ok := (*sm)[location];
+		if !ok {
+			locationStat = otherStat;
+		} else {
+			locationStat.Combine(otherStat);
+		}
+		(*sm)[location] = locationStat;
+	}
+}
+
 func ProcessChunk(start, end int64, c chan map[string]Stats) {
-	result := make(map[string]Stats)
+	result := make(map[string]Stats);
 
-	f, err := os.Open(inputFile)
+	f, err := os.Open(inputFile);
 	if err != nil {
-		panic(err)
+		panic(err);
 	}
-	defer f.Close()
+	defer f.Close();
 
-	_, err = f.Seek(start, 0)
+	_, err = f.Seek(start, 0);
 	if err != nil {
-		panic(err)
+		panic(err);
 	}
 
-	buf := make([]byte, 10_000)
-	currentLocation := start
+	buf := make([]byte, 1_000);
+	currentLocation := start;
 	carryOverBytes := []byte{};
 
 	for currentLocation < end {
-		bytesRead, err := f.Read(buf)
+		bytesRead, err := f.Read(buf);
 		if err != nil {
 			if err != io.EOF {
-				panic(err)
+				panic(err);
 			}
 		}
-		byteData := buf[:bytesRead]
-		currentLocation += int64(bytesRead)
+		byteData := buf[:bytesRead];
+		currentLocation += int64(bytesRead);
 		if currentLocation > end {
 			byteData = byteData[:int64(bytesRead)-(currentLocation-end)]
 		}
@@ -113,19 +164,29 @@ func ProcessChunk(start, end int64, c chan map[string]Stats) {
 		lineStart := 0;
 		for i, b := range byteData {
 			if b == '\n' {
-				_ = ProcessLine(append(carryOverBytes, byteData[lineStart:i]...));
+				location, temp := ProcessLine(append(carryOverBytes, byteData[lineStart:i]...));
+				AddToMap(&result, location, temp);
 				lineStart = i + 1;
 				carryOverBytes = []byte{};
 			}
 		}
-		fmt.Println(string(byteData));
-		carryOverBytes = byteData[lineStart:];
+		carryOverBytes = make([]byte, len(byteData[lineStart:]))
+		copy(carryOverBytes, byteData[lineStart:])
 	}
-	c <- result
+	location, temp := ProcessLine(carryOverBytes);
+	AddToMap(&result, location, temp);
+	c <- result;
 }
 
-func ProcessLine(b []byte) string {
-	s := string(b);
-	fmt.Println(s);
-	return s;
+func ProcessLine(b []byte) (string, int64) {
+	// fmt.Println(string(b));
+	values := strings.Split(string(b), ";")
+	location := values[0];
+	
+	fTemp, err := strconv.ParseFloat(values[1], 64);
+	if err != nil {
+		panic(err);
+	}
+	temp := int64(fTemp * 10);
+	return location, temp;
 }
