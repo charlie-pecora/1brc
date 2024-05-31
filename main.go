@@ -3,14 +3,14 @@ package main
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
-	"math"
 )
 
 const inputFile = "./measurements.txt"
-const numWorkers = 12;
+const numWorkers = 12
 
 func main() {
 	f, err := os.Open(inputFile)
@@ -26,12 +26,12 @@ func main() {
 	for worker := 0; worker < numWorkers; worker++ {
 		go ProcessChunk(segments[worker], segments[worker+1], c)
 	}
-	finalResult := make(map[string]Stats);
+	finalResult := make(map[string]Stats)
 	for worker := 0; worker < numWorkers; worker++ {
 		result := <-c
-		CombineMaps(&finalResult, result);
+		CombineMaps(&finalResult, result)
 	}
-	printMap(finalResult);
+	printMap(finalResult)
 }
 
 func getFileSegments(f *os.File) []int64 {
@@ -67,7 +67,7 @@ func getFileSegments(f *os.File) []int64 {
 				for i, v := range buf {
 					if v == '\n' {
 						nextStop += int64(i) + 1
-						break;
+						break
 					}
 				}
 			}
@@ -86,25 +86,25 @@ type Stats struct {
 }
 
 func (s *Stats) AddLine(new int64) {
-	s.count += 1;
-	s.sum += new;
-	s.max = max(s.max, new);
-	s.min = min(s.min, new);
+	s.count += 1
+	s.sum += new
+	s.max = max(s.max, new)
+	s.min = min(s.min, new)
 }
 
 func (s *Stats) Combine(other Stats) {
-	s.count += other.count;
-	s.sum += other.sum;
-	s.max = max(s.max, other.max);
-	s.min = min(s.min, other.min);
+	s.count += other.count
+	s.sum += other.sum
+	s.max = max(s.max, other.max)
+	s.min = min(s.min, other.min)
 }
 
 func (s Stats) Mean() float64 {
-	return math.Round(float64(s.sum) / float64(s.count)) / 10.0;
+	return math.Round(float64(s.sum)/float64(s.count)) / 10.0
 }
 
 func (s Stats) Print() string {
-	return fmt.Sprintf("%v/%v/%v", s.min, s.Mean(), s.max);
+	return fmt.Sprintf("%v/%v/%v", s.min, s.Mean(), s.max)
 }
 
 func makeStats(new int64) Stats {
@@ -118,108 +118,108 @@ func makeStats(new int64) Stats {
 }
 
 func AddToMap(sm *map[string]Stats, location string, temp int64) {
-	locationStat, ok := (*sm)[location];
+	locationStat, ok := (*sm)[location]
 	if !ok {
-		locationStat = makeStats(temp);
+		locationStat = makeStats(temp)
 	} else {
-		locationStat.AddLine(temp);
+		locationStat.AddLine(temp)
 	}
-	(*sm)[location] = locationStat;
+	(*sm)[location] = locationStat
 }
 
 func CombineMaps(sm *map[string]Stats, other map[string]Stats) {
 	for location, otherStat := range other {
-		locationStat, ok := (*sm)[location];
+		locationStat, ok := (*sm)[location]
 		if !ok {
-			locationStat = otherStat;
+			locationStat = otherStat
 		} else {
-			locationStat.Combine(otherStat);
+			locationStat.Combine(otherStat)
 		}
-		(*sm)[location] = locationStat;
+		(*sm)[location] = locationStat
 	}
 }
 
 func printMap(sm map[string]Stats) {
 	for k, v := range sm {
-		fmt.Printf("%v;%v\n", k, v.Print());
+		fmt.Printf("%v;%v\n", k, v.Print())
 	}
 }
 
 func ProcessChunk(start, end int64, c chan map[string]Stats) {
-	result := make(map[string]Stats);
+	result := make(map[string]Stats)
 
-	f, err := os.Open(inputFile);
+	f, err := os.Open(inputFile)
 	if err != nil {
-		panic(err);
+		panic(err)
 	}
-	defer f.Close();
+	defer f.Close()
 
-	_, err = f.Seek(start, 0);
+	_, err = f.Seek(start, 0)
 	if err != nil {
-		panic(err);
+		panic(err)
 	}
 
-	buf := make([]byte, 1_000);
-	currentLocation := start;
-	carryOverBytes := []byte{};
+	buf := make([]byte, 1_000)
+	currentLocation := start
+	carryOverBytes := []byte{}
 
 	for currentLocation < end {
-		bytesRead, err := f.Read(buf);
+		bytesRead, err := f.Read(buf)
 		if err != nil {
 			if err != io.EOF {
-				panic(err);
+				panic(err)
 			}
 		}
-		byteData := buf[:bytesRead];
-		currentLocation += int64(bytesRead);
+		byteData := buf[:bytesRead]
+		currentLocation += int64(bytesRead)
 		if currentLocation > end {
 			byteData = byteData[:int64(bytesRead)-(currentLocation-end)]
 		}
 
-		lineStart := 0;
+		lineStart := 0
 		for i, b := range byteData {
 			if b == '\n' {
-				location, temp, err := ProcessLine(append(carryOverBytes, byteData[lineStart:i]...));
+				location, temp, err := ProcessLine(append(carryOverBytes, byteData[lineStart:i]...))
 				if err != nil {
-					fmt.Println(err);
+					fmt.Println(err)
 				} else {
-					AddToMap(&result, location, temp);
+					AddToMap(&result, location, temp)
 				}
-				lineStart = i + 1;
-				carryOverBytes = []byte{};
+				lineStart = i + 1
+				carryOverBytes = []byte{}
 			}
 		}
 		carryOverBytes = make([]byte, len(byteData[lineStart:]))
 		copy(carryOverBytes, byteData[lineStart:])
 	}
-	location, temp, err := ProcessLine(carryOverBytes);
+	location, temp, err := ProcessLine(carryOverBytes)
 	if err != nil {
-		fmt.Println(err);
+		fmt.Println(err)
 	} else {
-		AddToMap(&result, location, temp);
+		AddToMap(&result, location, temp)
 	}
-	c <- result;
+	c <- result
 }
 
 func ProcessLine(b []byte) (string, int64, error) {
 	// fmt.Println(string(b));
 	defer func() {
-	// recover from panic if one occurred. Set err to nil otherwise.
-	if recover() != nil {
-		fmt.Println(string(b));
-		panic("t");
-	}
-	}();
+		// recover from panic if one occurred. Set err to nil otherwise.
+		if recover() != nil {
+			fmt.Println(string(b))
+			panic("t")
+		}
+	}()
 	values := strings.Split(string(b), ";")
 	if len(values) != 2 {
-		return "", 0, fmt.Errorf("Empty row %v", values);
+		return "", 0, fmt.Errorf("Empty row %v", values)
 	}
-	location := values[0];
-	
-	fTemp, err := strconv.ParseFloat(values[1], 64);
+	location := values[0]
+
+	fTemp, err := strconv.ParseFloat(values[1], 64)
 	if err != nil {
-		panic(err);
+		panic(err)
 	}
-	temp := int64(fTemp * 10);
-	return location, temp, nil;
+	temp := int64(fTemp * 10)
+	return location, temp, nil
 }
