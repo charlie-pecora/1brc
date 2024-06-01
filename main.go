@@ -1,18 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
-	"math"
+	"log"
 	"os"
 	"strconv"
-	"strings"
 )
 
 const inputFile = "./measurements.txt"
 const numWorkers = 12
 
 func main() {
+	Run();
+}
+
+func Run() {
 	f, err := os.Open(inputFile)
 	if err != nil {
 		panic(err)
@@ -21,12 +25,12 @@ func main() {
 
 	segments := getFileSegments(f)
 
-	c := make(chan map[string]Stats, numWorkers)
+	c := make(chan StatsMap, numWorkers)
 
 	for worker := 0; worker < numWorkers; worker++ {
 		go ProcessChunk(segments[worker], segments[worker+1], c)
 	}
-	finalResult := make(map[string]Stats)
+	finalResult := make(StatsMap, 1000)
 	for worker := 0; worker < numWorkers; worker++ {
 		result := <-c
 		CombineMaps(&finalResult, result)
@@ -99,13 +103,24 @@ func (s *Stats) Combine(other Stats) {
 	s.min = min(s.min, other.min)
 }
 
-func (s Stats) Mean() float64 {
-	return math.Round(float64(s.sum)/float64(s.count)) / 10.0
+func (s Stats) Mean() string {
+	return fmt.Sprintf("%.1f", float64(s.sum)/float64(s.count) / 10.0)
+}
+
+func (s Stats) Min() string {
+	return fmt.Sprintf("%.1f", float64(s.min) / 10.0)
+}
+
+func (s Stats) Max() string {
+	return fmt.Sprintf("%.1f", float64(s.max) / 10.0)
 }
 
 func (s Stats) Print() string {
-	return fmt.Sprintf("%v/%v/%v", s.min, s.Mean(), s.max)
+	return fmt.Sprintf("%v/%v/%v", s.Min(), s.Mean(), s.Max())
 }
+
+type Location = string;
+type StatsMap = map[string]Stats;
 
 func makeStats(new int64) Stats {
 	return Stats{
@@ -117,7 +132,7 @@ func makeStats(new int64) Stats {
 
 }
 
-func AddToMap(sm *map[string]Stats, location string, temp int64) {
+func AddToMap(sm *StatsMap, location string, temp int64) {
 	locationStat, ok := (*sm)[location]
 	if !ok {
 		locationStat = makeStats(temp)
@@ -127,7 +142,7 @@ func AddToMap(sm *map[string]Stats, location string, temp int64) {
 	(*sm)[location] = locationStat
 }
 
-func CombineMaps(sm *map[string]Stats, other map[string]Stats) {
+func CombineMaps(sm *StatsMap, other StatsMap) {
 	for location, otherStat := range other {
 		locationStat, ok := (*sm)[location]
 		if !ok {
@@ -139,14 +154,14 @@ func CombineMaps(sm *map[string]Stats, other map[string]Stats) {
 	}
 }
 
-func printMap(sm map[string]Stats) {
+func printMap(sm StatsMap) {
 	for k, v := range sm {
 		fmt.Printf("%v;%v\n", k, v.Print())
 	}
 }
 
-func ProcessChunk(start, end int64, c chan map[string]Stats) {
-	result := make(map[string]Stats)
+func ProcessChunk(start, end int64, c chan StatsMap) {
+	result := make(StatsMap)
 
 	f, err := os.Open(inputFile)
 	if err != nil {
@@ -159,7 +174,7 @@ func ProcessChunk(start, end int64, c chan map[string]Stats) {
 		panic(err)
 	}
 
-	buf := make([]byte, 1_000)
+	buf := make([]byte, 1024 * 1024 * 512)
 	currentLocation := start
 	carryOverBytes := []byte{}
 
@@ -181,7 +196,7 @@ func ProcessChunk(start, end int64, c chan map[string]Stats) {
 			if b == '\n' {
 				location, temp, err := ProcessLine(append(carryOverBytes, byteData[lineStart:i]...))
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 				} else {
 					AddToMap(&result, location, temp)
 				}
@@ -194,25 +209,29 @@ func ProcessChunk(start, end int64, c chan map[string]Stats) {
 	}
 	location, temp, err := ProcessLine(carryOverBytes)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	} else {
 		AddToMap(&result, location, temp)
 	}
 	c <- result
 }
 
-func ProcessLine(b []byte) (string, int64, error) {
+func ProcessLine(b []byte) (Location, int64, error) {
 	// fmt.Println(string(b));
-	values := strings.Split(string(b), ";")
+	values := bytes.Split(b, []byte(";"))
 	if len(values) != 2 {
-		return "", 0, fmt.Errorf("Empty row %v", values)
+		return Location([]byte{}), 0, fmt.Errorf("Empty row %v", values)
 	}
 	location := values[0]
 
-	fTemp, err := strconv.ParseFloat(values[1], 64)
+	temp := ParseInt(values[1]);
+	return Location(location), temp, nil
+}
+
+func ParseInt(v []byte) int64 {
+	f, err := strconv.ParseFloat(string(v), 32);
 	if err != nil {
 		panic(err)
 	}
-	temp := int64(fTemp * 10)
-	return location, temp, nil
+	return int64(f * 10.0)
 }
