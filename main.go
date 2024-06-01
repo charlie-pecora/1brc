@@ -194,18 +194,26 @@ func ProcessChunk(start, end int64, c chan StatsMap) {
 		lineStart := 0
 		for i, b := range byteData {
 			if b == '\n' {
-				location, temp, err := ProcessLine(append(carryOverBytes, byteData[lineStart:i]...))
-				if err != nil {
-					log.Println(err)
+				if len(carryOverBytes) > 0 {
+					location, temp, err := ProcessLine(append(carryOverBytes, byteData[lineStart:i]...))
+					if err != nil {
+						log.Println(err)
+					} else {
+						AddToMap(&result, location, temp)
+					}
 				} else {
-					AddToMap(&result, location, temp)
+					location, temp, err := ProcessLine(byteData[lineStart:i])
+					if err != nil {
+						log.Println(err)
+					} else {
+						AddToMap(&result, location, temp)
+					}
 				}
 				lineStart = i + 1
-				carryOverBytes = []byte{}
+				carryOverBytes = carryOverBytes[:0]
 			}
 		}
-		carryOverBytes = make([]byte, len(byteData[lineStart:]))
-		copy(carryOverBytes, byteData[lineStart:])
+		carryOverBytes = append(carryOverBytes, byteData[lineStart:]...)
 	}
 	location, temp, err := ProcessLine(carryOverBytes)
 	if err != nil {
